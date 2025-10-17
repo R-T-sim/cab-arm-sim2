@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>CAB 2D – mm座標 / 剛体チェーン / 静置スタート / インパルス接触 / dt=1/600</title>
+<title>CAB 2D – 剛体チェーン／フレーム回転／返し付き受面（インパルス接触）</title>
 <style>
-:root{--bg:#0b1020;--fg:#e8eef9;--muted:#9fb3d9;--card:#121a33;--good:#26d07c;--arm:#ff5a5a}
-html,body{height:100%} body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
-.wrap{display:grid;grid-template-columns:370px 1fr;gap:14px;height:100%;padding:14px;box-sizing:border-box}
+:root{--bg:#0b1020;--fg:#e8eef9;--muted:#9fb3d9;--card:#121a33;--good:#26d07c;--arm:#ff5a5a;--cab:#7fb6ff}
+html,body{height:100%} body{margin:0;background:var(--bg);color:var(--fg);
+font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
+.wrap{display:grid;grid-template-columns:380px 1fr;gap:14px;height:100%;padding:14px;box-sizing:border-box}
 .card{background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
 .panel{padding:14px 14px 10px;display:flex;flex-direction:column;gap:10px}
-h1{font-size:18px;margin:0 0 6px}h2{font-size:13px;margin:8px 0 2px;color:var(--muted);font-weight:600}
-.row{display:flex;align-items:center;gap:10px}.row label{min-width:155px;font-size:12px;color:var(--muted)}
-input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b59d9);border:none;color:#fff;border-radius:12px;padding:9px 12px;cursor:pointer;font-weight:600}
+h1{font-size:18px;margin:0 0 6px} h2{font-size:13px;margin:8px 0 2px;color:var(--muted);font-weight:600}
+.row{display:flex;align-items:center;gap:10px} .row label{min-width:170px;font-size:12px;color:var(--muted)}
+input[type=range]{width:100%} .btn{background:linear-gradient(180deg,#3a76ff,#2b59d9);border:none;color:#fff;border-radius:12px;padding:9px 12px;cursor:pointer;font-weight:600}
 .btn.secondary{background:#19254a;color:var(--fg);border:1px solid #2a3a6a}
 .kbd{display:inline-block;padding:2px 8px;border-radius:8px;background:#10172a;border:1px solid #1d2744;font-size:12px;color:var(--muted)}
 .legend{font-size:12px;color:var(--muted)} canvas{width:100%;height:100%;display:block}
@@ -22,8 +23,8 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 <div class="wrap">
   <div class="card panel">
     <div>
-      <h1>ホイスト（緑：操作）＋ 吊具フレーム＆アーム（赤：受動）＋ CAB（青）</h1>
-      <div class="legend">原点=フック(0,0)、X右＋/Y上＋、単位=mm。重力は下向き 9.8 m/s²。台車は |v| ≤ 0.3 m/s。</div>
+      <h1>ホイスト（緑：操作）＋ 吊具フレーム&アーム（赤：受動）＋ CAB（青）</h1>
+      <div class="legend">原点=フック(0,0), X右＋/Y上＋, 単位=mm。重力は下向き 9.8 m/s²。台車は |v| ≤ 0.3 m/s。</div>
     </div>
 
     <h2>ホイスト</h2>
@@ -37,25 +38,26 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     </div>
 
     <h2>吊具フレーム（剛体チェーンで懸垂）</h2>
-    <div class="row"><label>フレーム質量 m_f [kg]</label><input id="mf" type="range" min="10" max="500" step="5" value="120"><span id="mfv">120</span></div>
-    <div class="row"><label>チェーン長 Lc [mm]</label><input id="Lc" type="range" min="50" max="500" step="5" value="100"><span id="Lcv">100</span></div>
+    <div class="row"><label>フレーム質量 m_f [kg]</label><input id="mf" type="range" min="10" max="500" step="5" value="150"><span id="mfv">150</span></div>
+    <div class="row"><label>チェーン長 Lc [mm]</label><input id="Lc" type="range" min="50" max="600" step="5" value="150"><span id="Lcv">150</span></div>
     <div class="row"><label>フレーム粘性 c_f [1/s]</label><input id="cf" type="range" min="0" max="2" step="0.02" value="0.10"><span id="cfv">0.10</span></div>
 
     <h2>アーム（自由回転＋外側90°ストッパ）</h2>
     <div class="row"><label>アーム長 L_arm [mm]</label><input id="Larm" type="range" min="600" max="2000" step="10" value="1300"><span id="Larmv">1300</span></div>
     <div class="row"><label>アーム質量 m_arm [kg]</label><input id="marm" type="range" min="5" max="200" step="1" value="30"><span id="marmv">30</span></div>
-    <div class="row"><label>回転減衰 c_arm [N·m·s/rad]</label><input id="cdarm" type="range" min="0" max="50" step="0.5" value="8"><span id="cdarmv">8.0</span></div>
+    <div class="row"><label>回転減衰 c_arm [N·m·s/rad]</label><input id="cdarm" type="range" min="0" max="50" step="0.5" value="10"><span id="cdarmv">10.0</span></div>
 
-    <h2>接触（受面：インパルス法／摩擦のみ）</h2>
-    <div class="row"><label>受け溝深さ d [mm]</label><input id="groove" type="range" min="10" max="200" step="5" value="80"><span id="groovev">80</span></div>
-    <div class="row"><label>摩擦係数 μ</label><input id="mu" type="range" min="0" max="1" step="0.01" value="0.30"><span id="muv">0.30</span></div>
+    <h2>受面（棚＋返し）設定</h2>
+    <div class="row"><label>棚までの距離 s [mm]</label><input id="shelf" type="range" min="800" max="1600" step="10" value="1200"><span id="shelfv">1200</span></div>
+    <div class="row"><label>棚の長さ Ls [mm]</label><input id="slen" type="range" min="80" max="300" step="5" value="160"><span id="slenv">160</span></div>
+    <div class="row"><label>返しクリアランス e [mm]</label><input id="lip" type="range" min="5" max="60" step="1" value="20"><span id="lipv">20</span></div>
 
     <h2>CAB（青）</h2>
     <div class="row"><label>質量 m [kg]</label><input id="mass" type="range" min="50" max="2000" step="10" value="400"><span id="massv">400</span></div>
-    <div class="row"><label>幅 W [mm]</label><input id="W" type="range" min="600" max="2800" step="10" value="1800"><span id="Wv">1800</span></div>
+    <div class="row"><label>幅 W [mm]</label><input id="W" type="range" min="800" max="2800" step="10" value="1800"><span id="Wv">1800</span></div>
     <div class="row"><label>高さ H [mm]</label><input id="H" type="range" min="600" max="2400" step="10" value="1200"><span id="Hv">1200</span></div>
     <div class="row"><label>初期 重心X [mm]</label><input id="cx0" type="range" min="-2000" max="2000" step="1" value="7"><span id="cx0v">7</span></div>
-    <div class="row"><label>（参考）初期 重心Y [mm]</label><input id="cy0" type="range" min="-3000" max="500" step="1" value="-1800" disabled><span id="cy0v">※初期は受面に自動スナップ</span></div>
+    <div class="row"><label>摩擦係数 μ</label><input id="mu" type="range" min="0" max="1" step="0.01" value="0.30"><span id="muv">0.30</span></div>
     <div class="row"><label>回転減衰 cφ [N·m·s/rad]</label><input id="cdphi" type="range" min="0" max="200" step="1" value="10"><span id="cdphiv">10</span></div>
 
     <div class="legend" style="margin-top:8px">
@@ -69,20 +71,21 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 
 <script>
 (function(){
-  // ===== Canvas =====
+  // ===== Canvas/scale =====
   const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
   const DPR=Math.max(1,window.devicePixelRatio||1);
-  function resize(){const r=cv.getBoundingClientRect();const w=Math.max(2,Math.floor(r.width*DPR)),h=Math.max(2,Math.floor(r.height*DPR));if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}}
+  function resize(){const r=cv.getBoundingClientRect();const w=Math.max(2,Math.floor(r.width*DPR)), h=Math.max(2,Math.floor(r.height*DPR)); if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}}
   window.addEventListener('resize',resize); resize();
-  function ppm(){const W=cv.width,H=cv.height;return Math.max(Math.min(W/6000,H/4000),0.08)}
+  function PPM(){const W=cv.width,H=cv.height;return Math.max(Math.min(W/6000,H/4200),0.08);}
 
   // ===== UI =====
   function bind(id, lab, setter, fmt){const s=document.getElementById(id),l=document.getElementById(lab);const apply=()=>{const v=parseFloat(s.value);setter(v);l.textContent=fmt?fmt(v):String(v)};s.addEventListener('input',apply);apply();return{s,l};}
   let a_cmd=1500,vmax=300,ccart=0.25;
-  let mF=120,Lc=100,cF=0.10;
-  let Larm=1300,mArm=30,cArm=8.0;
-  let groove=80,mu=0.30;
-  let m=400,Wmm=1800,Hmm=1200,cdphi=10,cx0=7;
+  let mF=150,Lc=150,cF=0.10;             // frame
+  let Larm=1300,mArm=30,cArm=10;        // arms
+  let shelfDist=1200,shelfLen=160,lipClr=20; // shelf & lip
+  let m=400,Wmm=1800,Hmm=1200,mu=0.30,cdphi=10,cx0=7;
+
   bind('acmd','acmdv',v=>a_cmd=v,v=>v.toFixed(0));
   bind('vmax','vmaxv',v=>vmax=v,v=>v.toFixed(0));
   bind('cd','cdv',v=>ccart=v,v=>v.toFixed(2));
@@ -92,29 +95,42 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   bind('Larm','Larmv',v=>Larm=v,v=>v.toFixed(0));
   bind('marm','marmv',v=>mArm=v,v=>v.toFixed(0));
   bind('cdarm','cdarmv',v=>cArm=v,v=>v.toFixed(1));
-  bind('groove','groovev',v=>groove=v,v=>v.toFixed(0));
-  bind('mu','muv',v=>mu=v,v=>v.toFixed(2));
+  bind('shelf','shelfv',v=>shelfDist=v,v=>v.toFixed(0));
+  bind('slen','slenv',v=>shelfLen=v,v=>v.toFixed(0));
+  bind('lip','lipv',v=>lipClr=v,v=>v.toFixed(0));
+  bind('mass','massv',v=>m=v,v=>v.toFixed(0));
   bind('W','Wv',v=>Wmm=v,v=>v.toFixed(0));
   bind('H','Hv',v=>Hmm=v,v=>v.toFixed(0));
   bind('cx0','cx0v',v=>cx0=v,v=>v.toFixed(0));
+  bind('mu','muv',v=>mu=v,v=>v.toFixed(2));
   bind('cdphi','cdphiv',v=>cdphi=v,v=>v.toFixed(0));
 
   // ===== State =====
-  let t=0,dt=1/600;
-  // Hoist
-  let xt=0,vt=0;
-  // Chain-hung frame (pivot line y≈-100)
-  let xF=0,yF=-100,vFx=0,vFy=0;
-  // Arms (free rotation)
-  let thL=1.5*Math.PI,wL=0; // 左: [π,1.5π]
-  let thR=1.5*Math.PI,wR=0; // 右: [1.5π,2π]
-  // CAB
-  let cx=7,cy=-1800,cvx=0,cvy=0,phi=0,omega=0;
+  let t=0, dt=1/600;
+  // hoist
+  let xt=0, vt=0;
+  // frame rigid body (COM & rot)
+  let xF=0, yF=-100, vFx=0, vFy=0, psi=0, wF=0;
+  // arms (relative to frame)
+  let thL_rel=-Math.PI/2, wL_rel=0; // -90° (down)
+  let thR_rel=-Math.PI/2, wR_rel=0;
+  // cab
+  let cx=7, cy=-1800, cvx=0, cvy=0, phi=0, omega=0;
 
   const gmm=-9810, g=9.81;
-  const rootOfsL={x:-700,y:0}, rootOfsR={x:700,y:0};
+  // geometry
+  const frameSpan=2400;            // 描画・慣性用のフレーム幅 [mm]
+  const frameH=120;                // 見た目の高さ [mm]
+  const rootL_local={x:-700,y:0}, rootR_local={x:700,y:0}; // ピボット
+  const anchor_local={x:0,y:80};   // チェーン接続点（COMから+Yへ）
+  const cFrot=6.0;                 // フレーム回転減衰 [N·m·s/rad]
 
-  // buttons & keys
+  // derived inertia
+  function I_frame(){const W=frameSpan/1000,H=frameH/1000; return mF*(W*W+H*H)/12;}
+  function I_cab(){const W=Wmm/1000,H=Hmm/1000; return m*(W*W+H*H)/12;}
+  function I_arm(){const L=Larm/1000; return mArm*L*L/3;}
+
+  // keys & buttons
   const btnReset=document.getElementById('reset'), btnPause=document.getElementById('pause'); let paused=false;
   btnReset.addEventListener('click',()=>reset());
   btnPause.addEventListener('click',()=>{paused=!paused;btnPause.textContent=paused?'再開':'一時停止';});
@@ -123,153 +139,213 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   window.addEventListener('keyup',e=>{if(e.code==='ArrowLeft')keyL=false;if(e.code==='ArrowRight')keyR=false;if(e.code==='Space')brake=false;});
 
   function reset(){
-    t=0; xt=0; vt=0;
-    xF=0; yF=-100; vFx=0; vFy=0;
-    thL=1.5*Math.PI; thR=1.5*Math.PI; wL=0; wR=0;
-    cx=cx0; phi=0; omega=0; cvx=0; cvy=0;
-
-    // --- 初期は受面に“静置”して上下動をゼロに ---
-    // アーム先端高さ（下向き開始）
-    const rootLW={x:xF+rootOfsL.x,y:yF+rootOfsL.y};
-    const aY = rootLW.y + Math.sin(thL)*Larm; // 左右同じ値
-    const yG = Hmm/2 - groove;               // CABローカル溝高さ
-    cy = aY - yG;                            // pC.y = a.y
-    // 縦速度も0
-    cvy = 0;
+    t=0; xt=0; vt=0; psi=0; wF=0; xF=0; yF=-100; vFx=0; vFy=0;
+    thL_rel=-Math.PI/2; thR_rel=-Math.PI/2; wL_rel=0; wR_rel=0;
+    cx=cx0; cvx=0; cvy=0; phi=0; omega=0;
+    // 初期：棚に静置（左・右の平均高さにスナップ）
+    const rootLW=add(posF(rootL_local), {x:0,y:0});
+    const nDown={x:0,y:-1};
+    const aY = rootLW.y + (Math.sin(psi+thL_rel))*Larm; // 先端高さ（左右同じ）
+    const yG = Hmm/2 - 80; // groove仮（初期80mm）実際はスライダから
+    cy = aY - yG; cvy=0;
+    // チェーン長補正
+    positionSolveRigidChain();
     paused=false; btnPause.textContent='一時停止';
   }
-  reset();
 
-  // ===== Helpers =====
-  // 剛体チェーン拘束（|H-F|=Lc）：フレーム速度/位置を補正（張力のみ）
-  function rigidChainConstraint(){
-    const Hx=xt, Hy=0, vxH=vt, vyH=0;
-    let rx=xF-Hx, ry=yF-Hy; let len=Math.hypot(rx,ry);
-    if(len<1e-6){ rx=0; ry=-Lc; len=Lc; }
-    let nx=rx/len, ny=ry/len;
+  // ----- math helpers -----
+  function rot(a,v){const c=Math.cos(a),s=Math.sin(a);return {x:c*v.x - s*v.y, y:s*v.x + c*v.y};}
+  function add(a,b){return {x:a.x+b.x,y:a.y+b.y};}
+  function sub(a,b){return {x:a.x-b.x,y:a.y-b.y};}
+  function mul(v,k){return {x:v.x*k,y:v.y*k};}
+  function dot(a,b){return a.x*b.x+a.y*b.y;}
+  function cross(a,b){return a.x*b.y - a.y*b.x;} // 2D scalar
+  function perp(v){return {x:-v.y,y:v.x};}
+  function len(v){return Math.hypot(v.x,v.y);}
+  function norm(v){const L=len(v)||1;return {x:v.x/L,y:v.y/L};}
 
-    // 位置誤差を戻す（Baumgarte）
-    const err = len - Lc;  // >0 伸び、<0 たるみ
-    // たるみ時は何もしない（チェーンは押せない）
-    if(err<0){
-      // ただし重力で必ず張るので、そのまま自由落下
-      return;
-    }
-    // 位置をピッタリに
-    xF = Hx + nx*Lc;
-    yF = Hy + ny*Lc;
-
-    // 速度拘束： (vF - vH)·n = 0 になるようインパルス
-    const vrel = (vFx - vxH)*nx + (vFy - vyH)*ny; // [mm/s]
-    if(vrel>0){ // 離れる方向はOK（張力不要）
-      return;
-    }
-    // 有効質量（ホイストは運動学扱い→フレームのみ）
-    const J = - (vrel/1000) * mF; // [N·s] = kg * (m/s)
-    // 張力のみ（J>=0）にクランプ
-    const Jt = Math.max(0, J);
-    vFx += (1000*Jt/mF)*nx;
-    vFy += (1000*Jt/mF)*ny;
+  // フレームCOM→ワールド
+  function posF(local){return add({x:xF,y:yF}, rot(psi, local));}
+  function velAt(local){ // frame点の速度
+    const r=rot(psi,local); return {x:vFx - wF*r.y, y:vFy + wF*r.x};
   }
 
-  // 受面インパルス（法線のみ・摩擦あり）
-  function supportImpulse(side, a, vA, pC, vC, rCW, th, Iarm){
+  // 剛体チェーン：位置補正
+  function positionSolveRigidChain(){
+    const A=posF(anchor_local);
+    const H={x:xt,y:0};
+    const r=sub(A,H); const L=len(r)||1; const n=mul(r,1/L);
+    const err=L-Lc; // 伸び(+)/たるみ(-)
+    if(err!==0){
+      // たるみは放置（押せない）が、初期合わせのため伸びだけ戻す
+      if(err>0){
+        const corr=-err; // フレームを手前へ
+        xF += n.x*corr; yF += n.y*corr;
+      }
+    }
+  }
+
+  // 剛体チェーン：速度拘束（張力のみ）
+  function velocitySolveRigidChain(){
+    const A=posF(anchor_local), vA=velAt(anchor_local);
+    const H={x:xt,y:0}, vH={x:vt,y:0};
+    const n=norm(sub(A,H)); // H→A
+    const vrel = dot(sub(vA,vH), n)/1000; // m/s
+    // 有効質量（フレームのみ）
+    const rA=rot(psi,anchor_local); const rAm={x:rA.x/1000,y:rA.y/1000};
+    const K = 1/mF + (cross(rAm,n)**2)/I_frame();
+    let J = - vrel / K; // N·s
+    if(J<0) J=0; // 張力のみ
+    // 速度更新（フレームへ -n 方向）
+    vFx += (1000*J/mF)*(-n.x);
+    vFy += (1000*J/mF)*(-n.y);
+    wF  += (cross(rAm, {x:-J*n.x, y:-J*n.y}) )/I_frame();
+  }
+
+  // 一般化棚面の接触（n:棚法線, t:棚接線, S:棚原点, V_S:速度）
+  // side: 'L' or 'R', pivotWorld: ピボット位置, rPivot_m: COM→ピボット[m]
+  function contactShelf(side, S, V_S, n, t, Pgroove, Vgroove, rCM_m, pivotWorld){
     const tol=0.5; // mm
-    // 少量の重なりは位置で戻す（震え防止）
-    if(pC.y < a.y){ const dy=a.y - pC.y; cy += dy; pC.y += dy; }
+    // signed distance: d = (p - S)·n （>0 なら面の外側/上側）
+    const d = dot(sub(Pgroove,S), n);
+    const vrel_n = dot(sub(Vgroove,V_S), n)/1000; // m/s
+    if(d<=tol && vrel_n<0){
+      // 法線インパルス
+      const K = 1/m + (cross(rCM_m,n)**2)/I_cab();
+      const Jn = Math.max(0, -vrel_n / K); // N·s
+      const Jnvec = {x:Jn*n.x, y:Jn*n.y};
+      // CAB
+      cvx += (1000*Jnvec.x)/m; cvy += (1000*Jnvec.y)/m;
+      omega += cross(rCM_m, Jnvec)/I_cab();
+      // フレーム反作用（ピボットへ -Jn）
+      const Jf={x:-Jnvec.x,y:-Jnvec.y};
+      vFx += (1000*Jf.x)/mF; vFy += (1000*Jf.y)/mF;
+      const rPFm={x:(pivotWorld.x - xF)/1000, y:(pivotWorld.y - yF)/1000};
+      wF  += cross(rPFm, Jf)/I_frame();
 
-    // CAB慣性
-    const Icab = m*((Wmm/1000)**2 + (Hmm/1000)**2)/12;
-    const rxm=rCW.x/1000, rym=rCW.y/1000;
+      // 摩擦（接線方向）
+      const vrel_t = dot(sub(Vgroove,V_S), t)/1000;
+      const Kt = 1/m + (cross(rCM_m,t)**2)/I_cab();
+      const Jt_unc = - vrel_t / Kt;
+      const Jt_mag = Math.min(mu*Jn, Math.abs(Jt_unc));
+      const Jt = (Jt_unc>=0? +Jt_mag : -Jt_mag);
+      const Jtvec={x:Jt*t.x, y:Jt*t.y};
+      cvx += (1000*Jtvec.x)/m; cvy += (1000*Jtvec.y)/m;
+      omega += cross(rCM_m, Jtvec)/I_cab();
+      // 反作用
+      const Jft={x:-Jtvec.x,y:-Jtvec.y};
+      vFx += (1000*Jft.x)/mF; vFy += (1000*Jft.y)/mF;
+      wF  += cross(rPFm, Jft)/I_frame();
 
-    // 法線（上向き）インパルス
-    const vrel_n = vC.y - vA.y; // (mm/s) 下向きなら負
-    if(pC.y <= a.y + tol && vrel_n < 0){
-      const kN = 1/m + (rxm*rxm)/Icab;
-      const Pn = Math.max(0, - (vrel_n/1000)/kN); // N·s
-      cvy   += (1000*Pn)/m;           // CAB
-      omega += (rxm*Pn)/Icab;
-      const rTipx=(Larm*Math.cos(th))/1000; // アーム反作用
-      if(side==='L') wL += (-(rTipx*Pn))/Iarm; else wR += (-(rTipx*Pn))/Iarm;
-      // 摩擦（クーロン）
-      const kT = 1/m + (rym*rym)/Icab;
-      const vrel_t = vC.x - vA.x;
-      const Pt_unc = - (vrel_t/1000)/kT;
-      const Pt = Math.max(-mu*Pn, Math.min(mu*Pn, Pt_unc));
-      cvx   += (1000*Pt)/m;
-      omega += (-(rym)*Pt)/Icab;
-      const rTipy=(Larm*Math.sin(th))/1000;
-      if(side==='L') wL += (rTipy*Pt)/Iarm; else wR += (rTipy*Pt)/Iarm;
+      // アーム相対角（接点での反力トルク）— ピボットに与えるトルクで腕へ
+      const rPCm={x:(Pgroove.x - pivotWorld.x)/1000, y:(Pgroove.y - pivotWorld.y)/1000};
+      const Iarm = I_arm();
+      const tau_arm = cross(rPCm, {x:-(Jnvec.x+Jtvec.x), y:-(Jnvec.y+Jtvec.y)}); // N·m
+      if(side==='L') wL_rel += (tau_arm/Iarm)*dt; else wR_rel += (tau_arm/Iarm)*dt;
+    }
+
+    // 返し（外側へ抜けない）：外側方向 b
+    const b = (side==='L')? {x:-t.x, y:-t.y} : {x:+t.x, y:+t.y};
+    const db = dot(sub(Pgroove,S), b) + lipClr; // ≥0を許可
+    const vrel_b = dot(sub(Vgroove,V_S), b)/1000;
+    if(db<=tol && vrel_b<0){
+      const Kb = 1/m + (cross(rCM_m,b)**2)/I_cab();
+      const Jb = Math.max(0, -vrel_b / Kb);
+      const Jbvec={x:Jb*b.x, y:Jb*b.y};
+      cvx += (1000*Jbvec.x)/m; cvy += (1000*Jbvec.y)/m;
+      omega += cross(rCM_m, Jbvec)/I_cab();
+      const Jfr={x:-Jbvec.x,y:-Jbvec.y};
+      vFx += (1000*Jfr.x)/mF; vFy += (1000*Jfr.y)/mF;
+      const rPFm={x:(pivotWorld.x - xF)/1000, y:(pivotWorld.y - yF)/1000};
+      wF  += cross(rPFm, Jfr)/I_frame();
+      const rPCm={x:(Pgroove.x - pivotWorld.x)/1000, y:(Pgroove.y - pivotWorld.y)/1000};
+      const tau_arm = cross(rPCm, {x:-Jbvec.x,y:-Jbvec.y});
+      const Iarm = I_arm();
+      if(side==='L') wL_rel += (tau_arm/Iarm)*dt; else wR_rel += (tau_arm/Iarm)*dt;
     }
   }
 
-  // ===== Step =====
+  // ===== main step =====
   function step(){
-    // Hoist
-    let u=0;if(keyL)u-=a_cmd;if(keyR)u+=a_cmd;if(brake)u+=-3*vt;
-    vt += (u - ccart*vt)*dt; if(vt>vmax)vt=vmax;if(vt<-vmax)vt=-vmax; xt += vt*dt;
+    // 1) hoist control
+    let u=0; if(keyL) u-=a_cmd; if(keyR) u+=a_cmd; if(brake) u+=-3*vt;
+    vt += (u - ccart*vt)*dt; if(vt>vmax) vt=vmax; if(vt<-vmax) vt=-vmax; xt += vt*dt;
 
-    // Frame free + gravity
-    vFx += (-cF*vFx)*dt;                     // 横粘性
-    vFy += (gmm/1000 - cF*vFy)*dt;           // 重力＋縦粘性
+    // 2) frame free (gravity & damping) → chain constraints
+    vFx += (-cF*vFx)*dt;
+    vFy += (gmm/1000 - cF*vFy)*dt;
     xF  += vFx*dt; yF += vFy*dt;
+    // chain: position & velocity solve
+    positionSolveRigidChain();
+    velocitySolveRigidChain();
 
-    // Rigid chain constraint
-    rigidChainConstraint();
+    // 3) kinematics of pivots & shelves
+    const rootLW=posF(rootL_local), vRootL=velAt(rootL_local);
+    const rootRW=posF(rootR_local), vRootR=velAt(rootR_local);
 
-    // Geometry
-    const rootLW={x:xF+rootOfsL.x, y:yF+rootOfsL.y};
-    const rootRW={x:xF+rootOfsR.x, y:yF+rootOfsR.y};
-    const aL={x:rootLW.x + Larm*Math.cos(thL), y:rootLW.y + Larm*Math.sin(thL)};
-    const aR={x:rootRW.x + Larm*Math.cos(thR), y:rootRW.y + Larm*Math.sin(thR)};
-    const vAL={x:vFx - wL*(Larm*Math.sin(thL)), y:vFy + wL*(Larm*Math.cos(thL))};
-    const vAR={x:vFx - wR*(Larm*Math.sin(thR)), y:vFy + wR*(Larm*Math.cos(thR))};
+    // arms absolute angles/velocities
+    const thL = psi + thL_rel, wLa = wF + wL_rel;
+    const thR = psi + thR_rel, wRa = wF + wR_rel;
 
+    // basis on each arm: d (arm axis), n (shelf normal), t (shelf tangential)
+    function basis(th){ const d={x:Math.cos(th),y:Math.sin(th)}; const n={x:-d.x,y:-d.y}; const t=perp(n); return {d,n,t};}
+    const bL=basis(thL), bR=basis(thR);
+
+    // shelf origin（ピボットから arm 軸方向に s 距離）
+    const SL = add(rootLW, mul(bL.d, shelfDist));
+    const SR = add(rootRW, mul(bR.d, shelfDist));
+    const vSL = {x:vRootL.x - wLa*(SL.y-rootLW.y), y:vRootL.y + wLa*(SL.x-rootLW.x)};
+    const vSR = {x:vRootR.x - wRa*(SR.y-rootRW.y), y:vRootR.y + wRa*(SR.x-rootRW.x)};
+
+    // 4) CAB groove points（左右）
     const cph=Math.cos(phi), sph=Math.sin(phi);
-    const xL_loc=-Wmm/2+60, xR_loc=Wmm/2-60, yG=Hmm/2 - groove;
+    const xL_loc=-Wmm/2+60, xR_loc=Wmm/2-60, yG=Hmm/2 - 80; // 溝深さ=80mm固定で接触点作成（棚面は別設定）
     const pCL={x:cx + cph*xL_loc - sph*yG, y:cy + sph*xL_loc + cph*yG};
     const pCR={x:cx + cph*xR_loc - sph*yG, y:cy + sph*xR_loc + cph*yG};
-    const rLw={x:cph*xL_loc - sph*yG, y:sph*xL_loc + cph*yG};
-    const rRw={x:cph*xR_loc - sph*yG, y:sph*xR_loc + cph*yG};
-    const vCL={x:cvx - omega*rLw.y, y:cvy + omega*rLw.x};
-    const vCR={x:cvx - omega*rRw.y, y:cvy + omega*rRw.x};
+    const vCL={x:cvx - omega*(  (sph*xL_loc + cph*yG) ), y:cvy + omega*( (cph*xL_loc - sph*yG) )};
+    const vCR={x:cvx - omega*(  (sph*xR_loc + cph*yG) ), y:cvy + omega*( (cph*xR_loc - sph*yG) )};
+    const rCLm={x:(pCL.x - cx)/1000, y:(pCL.y - cy)/1000};
+    const rCRm={x:(pCR.x - cx)/1000, y:(pCR.y - cy)/1000};
 
-    // Contact impulses
-    const Lm=Larm/1000, Iarm=mArm*Lm*Lm/3;
-    supportImpulse('L',aL,vAL,pCL,vCL,rLw,thL,Iarm);
-    supportImpulse('R',aR,vAR,pCR,vCR,rRw,thR,Iarm);
+    // 5) contact with shelves (impulses)
+    contactShelf('L', SL, vSL, bL.n, bL.t, pCL, vCL, rCLm, rootLW);
+    contactShelf('R', SR, vSR, bR.n, bR.t, pCR, vCR, rCRm, rootRW);
 
-    // CAB gravity & damping
+    // 6) CAB gravity & damping
     cvy += gmm*dt/1000;
     cx  += cvx*dt; cy += cvy*dt;
-    const Icab=m*((Wmm/1000)**2+(Hmm/1000)**2)/12;
-    omega += (-cdphi*omega/Icab)*dt; phi += omega*dt;
+    omega += (-cdphi*omega/I_cab())*dt; phi += omega*dt;
 
-    // Arm gravity + damping
-    const tauLg = - mArm*g*(Lm/2)*Math.cos(thL);
+    // 7) arms gravity (relative) & damping
+    const Iarm=I_arm();
+    const Lm=Larm/1000;
+    const tauLg = - mArm*g*(Lm/2)*Math.cos(thL); // world角でOK
     const tauRg = - mArm*g*(Lm/2)*Math.cos(thR);
-    wL += ((tauLg - cArm*wL)/Iarm)*dt; thL += wL*dt;
-    wR += ((tauRg - cArm*wR)/Iarm)*dt; thR += wR*dt;
+    wL_rel += ((tauLg - cArm*wL_rel)/Iarm)*dt;
+    wR_rel += ((tauRg - cArm*wR_rel)/Iarm)*dt;
+    thL_rel += (wL_rel)*dt;  // relative angle
+    thR_rel += (wR_rel)*dt;
 
-    // Angle stoppers：左[π,1.5π]、右[1.5π,2π]
-    const pi=Math.PI, hi=1.5*pi, tw=2*pi;
-    if(thL>hi){thL=hi; if(wL>0) wL=0;}
-    if(thL<pi){thL=pi; if(wL<0) wL=0;}
-    if(thR<hi){thR=hi; if(wR<0) wR=0;}
-    if(thR>tw){thR=tw; if(wR>0) wR=0;}
+    // 8) frame rotation decay
+    wF += (-cFrot*wF/I_frame())*dt; psi += wF*dt;
 
-    return {rootLW,rootRW,aL,aR,pCL,pCR};
+    // 9) arm stoppers（相対角）：左[-π,-π/2]、右[-π/2,0]
+    if(thL_rel>-Math.PI/2){thL_rel=-Math.PI/2; if(wL_rel>0) wL_rel=0;}
+    if(thL_rel<-Math.PI){thL_rel=-Math.PI; if(wL_rel<0) wL_rel=0;}
+    if(thR_rel>0){thR_rel=0; if(wR_rel>0) wR_rel=0;}
+    if(thR_rel<-Math.PI/2){thR_rel=-Math.PI/2; if(wR_rel<0) wR_rel=0;}
+
+    return {SL,SR,bL,bR,rootLW,rootRW};
   }
 
-  // ===== Draw =====
+  // ===== draw =====
   const readout=document.getElementById('readout');
   function draw(cache){
-    const s=ppm(); resize();
+    const s=PPM(); resize();
     const W=cv.width,H=cv.height; const ox=W*0.5, oy=H*0.15;
     const sx=x=>ox+x*s, sy=y=>oy-y*s;
 
     ctx.clearRect(0,0,W,H);
-
     // Grid
     ctx.save(); ctx.strokeStyle='#1b2445'; ctx.lineWidth=1;
     const g=200; for(let x=-8000;x<=8000;x+=g){ctx.beginPath();ctx.moveTo(sx(x),0);ctx.lineTo(sx(x),H);ctx.stroke();}
@@ -277,44 +353,66 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     ctx.restore();
 
     // Hoist
-    ctx.fillStyle='#26d07c'; const w=220,h=120;
-    ctx.fillRect(sx(xt)-w/2, sy(200)-h/2, w, h);
+    ctx.fillStyle='#26d07c'; const hw=220, hh=120;
+    ctx.fillRect(sx(xt)-hw/2, sy(200)-hh/2, hw, hh);
     ctx.strokeStyle='#26d07c'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx(xt),sy(0)); ctx.lineTo(sx(xt),sy(200)); ctx.stroke();
 
-    // Chain (rigid, visual)：Hoist→Frame center
-    const midX=(cache.rootLW.x+cache.rootRW.x)/2;
-    ctx.strokeStyle='#7bd6a8'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx(xt),sy(0)); ctx.lineTo(sx(midX), sy(cache.rootLW.y)); ctx.stroke();
+    // Chain (rigid) from hoist to frame anchor
+    const anchor=posF(anchor_local);
+    ctx.strokeStyle='#7bd6a8'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx(xt),sy(0)); ctx.lineTo(sx(anchor.x), sy(anchor.y)); ctx.stroke();
 
-    // Frame beam
-    ctx.strokeStyle='#ff5a5a'; ctx.lineWidth=6;
-    ctx.beginPath(); ctx.moveTo(sx(cache.rootLW.x-300),sy(cache.rootLW.y)); ctx.lineTo(sx(cache.rootRW.x+300),sy(cache.rootRW.y)); ctx.stroke();
+    // Frame beam (rectangle, rotated ψ)
+    ctx.save();
+    ctx.translate(sx(xF), sy(yF)); ctx.rotate(-psi);
+    ctx.fillStyle='#ff6e6e'; ctx.fillRect(-frameSpan*s/2, -frameH*s/2, frameSpan*s, frameH*s);
+    ctx.restore();
 
-    // Arms
-    ctx.beginPath(); ctx.moveTo(sx(cache.rootLW.x),sy(cache.rootLW.y)); ctx.lineTo(sx(cache.aL.x),sy(cache.aL.y)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx(cache.rootRW.x),sy(cache.rootRW.y)); ctx.lineTo(sx(cache.aR.x),sy(cache.aR.y)); ctx.stroke();
-    ctx.fillStyle='#ffb3b3'; ctx.fillRect(sx(cache.aL.x)-6,sy(cache.aL.y)-3,12,6); ctx.fillRect(sx(cache.aR.x)-6,sy(cache.aR.y)-3,12,6);
+    // Arms outline（返し付き）
+    function drawArm(pivot, b, side){
+      // 基準ベクトル
+      const d=b.d, n=b.n, t=b.t;
+      const base=pivot;
+      const p1=add(base, mul(d, shelfDist*0.55));
+      const p2=add(p1, mul(t, side==='L' ? +120 : -120));
+      const p3=add(base, mul(d, shelfDist));
+      const shelfL = side==='L' ? add(p3, mul(t, +shelfLen)) : add(p3, mul(t, -shelfLen));
+      const lipTop = add(shelfL, mul(n, +80));
+      // 骨格
+      ctx.strokeStyle='#ff5a5a'; ctx.lineWidth=6;
+      ctx.beginPath(); ctx.moveTo(sx(base.x),sy(base.y));
+      ctx.lineTo(sx(p1.x),sy(p1.y));
+      ctx.lineTo(sx(p2.x),sy(p2.y));
+      ctx.lineTo(sx(p3.x),sy(p3.y));
+      ctx.stroke();
+      // 棚
+      ctx.strokeStyle='#ff9a9a'; ctx.lineWidth=8;
+      ctx.beginPath(); ctx.moveTo(sx(p3.x),sy(p3.y)); ctx.lineTo(sx(shelfL.x),sy(shelfL.y)); ctx.stroke();
+      // 返し（垂直）
+      ctx.beginPath(); ctx.moveTo(sx(shelfL.x),sy(shelfL.y)); ctx.lineTo(sx(lipTop.x),sy(lipTop.y)); ctx.stroke();
+    }
+    drawArm(cache.rootLW, cache.bL, 'L');
+    drawArm(cache.rootRW, cache.bR, 'R');
 
     // CAB
-    ctx.save(); ctx.translate(sx(cx),sy(cy)); ctx.rotate(-phi);
+    ctx.save(); ctx.translate(sx(cx), sy(cy)); ctx.rotate(-phi);
     ctx.fillStyle='rgba(127,182,255,0.9)'; ctx.fillRect(-Wmm*s/2, +Hmm*s/2 - Hmm*s, Wmm*s, Hmm*s);
     ctx.restore();
 
-    // groove markers
-    ctx.fillStyle='#ffd166'; ctx.beginPath(); ctx.arc(sx(cache.pCL.x), sy(cache.pCL.y), 4, 0, 2*Math.PI); ctx.fill();
-    ctx.beginPath(); ctx.arc(sx(cache.pCR.x), sy(cache.pCR.y), 4, 0, 2*Math.PI); ctx.fill();
-
+    // readout
     readout.textContent =
-      `t=${t.toFixed(2)} s  |  v_t=${vt.toFixed(1)} mm/s (lim ${vmax.toFixed(0)})\n`+
-      `Frame c=(${((cache.rootLW.x+cache.rootRW.x)/2).toFixed(1)}, ${cache.rootLW.y.toFixed(1)})  |  Arms θL=${(thL*180/Math.PI).toFixed(1)}° θR=${(thR*180/Math.PI).toFixed(1)}°\n`+
-      `CAB c=(${cx.toFixed(1)}, ${cy.toFixed(1)})  φ=${(phi*180/Math.PI).toFixed(2)}°  μ=${mu.toFixed(2)}`;
+      `t=${t.toFixed(2)} s | vᵗ=${vt.toFixed(1)} mm/s (≤${vmax.toFixed(0)})\n`+
+      `Frame c=(${xF.toFixed(1)}, ${yF.toFixed(1)}) ψ=${(psi*180/Math.PI).toFixed(2)}°  v=(${vFx.toFixed(1)}, ${vFy.toFixed(1)})\n`+
+      `Arms θL_rel=${(thL_rel*180/Math.PI).toFixed(1)}°  θR_rel=${(thR_rel*180/Math.PI).toFixed(1)}°\n`+
+      `CAB  c=(${cx.toFixed(1)}, ${cy.toFixed(1)}) φ=${(phi*180/Math.PI).toFixed(2)}°  μ=${mu.toFixed(2)}  shelf=${shelfDist.toFixed(0)}mm`;
   }
 
-  // ===== Loop =====
-  let last=performance.now(),acc=0,cache={rootLW:{x:xF+rootOfsL.x,y:yF},rootRW:{x:xF+rootOfsR.x,y:yF},aL:{x:0,y:0},aR:{x:0,y:0},pCL:{x:cx,y:cy},pCR:{x:cx,y:cy}};
+  // ===== loop =====
+  let last=performance.now(), acc=0, cache=null;
   function loop(now){
     const el=(now-last)/1000; last=now; resize();
     if(!paused){acc+=Math.min(el,0.1); while(acc>=dt){ cache=step(); t+=dt; acc-=dt; }}
-    draw(cache); requestAnimationFrame(loop);
+    draw(cache || {SL:{},SR:{},bL:{d:{x:0,y:-1},n:{x:0,y:1},t:{x:-1,y:0}},bR:{d:{x:0,y:-1},n:{x:0,y:1},t:{x:-1,y:0}},rootLW:{x:xF-700,y:yF},rootRW:{x:xF+700,y:yF}});
+    requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 })();
