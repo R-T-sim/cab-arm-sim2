@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>CAB 2D v5（張力のみの剛体チェーン / 受面で持上げ / 慣性遅れ / アーム自由）</title>
+<title>CAB 2D v5.1（張力のみの剛体チェーン / 受面で持上げ / 慣性遅れ / アーム自由）</title>
 <style>
 :root{--bg:#0b1020;--fg:#e8eef9;--muted:#9fb3d9;--card:#121a33;--good:#26d07c;--arm:#ff5a5a;--cab:#7fb6ff}
 html,body{height:100%}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
@@ -25,7 +25,7 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
       <h1>ホイスト（緑：操作）＋ 吊具フレーム＆アーム（赤）＋ CAB（青）</h1>
       <div class="legend">
         原点=フック(0,0)、X右＋/Y上＋、単位=mm。重力は下向き 9.8 m/s²。台車は |v| ≤ 0.3 m/s。<br>
-        v5：<b>チェーンは剛体長・張力のみ</b>、<b>受面は一方向接触＋摩擦</b>、<b>アーム根元は開き方向フリー</b>。
+        v5.1：<b>チェーンは剛体長（張力のみ）</b>、<b>受面＝一方向接触＋摩擦＋微小位置安定化</b>、<b>アーム根元は開き方向フリー</b>。
       </div>
     </div>
 
@@ -82,7 +82,7 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   let a_cmd=3000, vmax=300, ccart=0.26;
   let mF=150, Lc=150;
   let frameSpan=2400, frameH=120;
-  let anchor_local={x:0, y:80};
+  let anchor_local={x:0, y:80};                  // フレーム座標でアンカー位置
   let rootL_local={x:-700, y:-100}, rootR_local={x:700, y:-100};
   let L_drop=220, L_knee=140, D_knee=160, L_vert=1200, Ls=160, H_lip=80;
   let m=400, Wmm=1800, Hmm=1200, mu=0.30, cdphi=10, cx0=7;
@@ -107,15 +107,16 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   // ===== State =====
   let t=0, dt=1/600;
   const SUB_STEPS = 8;   // サブステップ
+  const POS_ITERS  = 6;  // チェーン位置拘束反復
   const EPS = 1e-9;
 
   // hoist
   let xt=0, vt=0;
   // frame
   let xF=0, yF=-100, vFx=0, vFy=0, psi=0, wF=0;
-  // arms（相対角：開き方向フリー）
+  // arms（開き方向フリー：左[-180,-90]°、右[-90,0]°）
   let thL_rel=-Math.PI/2, wL_rel=0, thR_rel=-Math.PI/2, wR_rel=0;
-  const L_st=[-Math.PI,-Math.PI/2], R_st=[-Math.PI/2,0]; // 左:[-180,-90] 右:[-90,0]
+  const L_st=[-Math.PI,-Math.PI/2], R_st=[-Math.PI/2,0];
   const mArm=30, cArm=10;
   // cab
   let cx=cx0, cy=-1800, cvx=0, cvy=0, phi=0, omega=0;
@@ -127,28 +128,27 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   function sub(a,b){return {x:a.x-b.x,y:a.y-b.y};}
   function mul(v,k){return {x:v.x*k,y:v.y*k};}
   function len(v){return Math.hypot(v.x,v.y);}
-  function norm(v){const L=len(v)||1;return {x:v.x/L,y:v.y/L};}
   function dot(a,b){return a.x*b.x+a.y*b.y;}
   function posF(local){return add({x:xF,y:yF}, rot(psi, local));}
   function velAt(local){const r=rot(psi,local); return {x:vFx - wF*r.y, y:vFy + wF*r.x};}
   function I_frame(){const W=frameSpan/1000,H=frameH/1000; return mF*(W*W+H*H)/12;}
   function I_cab(){const W=Wmm/1000,H=Hmm/1000; return m*(W*W+H*H)/12;}
 
-  // ===== Arm geometry（棚＋返しの平面と向き）=====
+  // ===== Arm geometry =====
   function armGeom(side, rootW, vRoot, thAbs, wAbs){
-    const d={x:Math.cos(thAbs),y:Math.sin(thAbs)};          // アーム軸（下向きが初期）
+    const d={x:Math.cos(thAbs),y:Math.sin(thAbs)};          // アーム軸（下向きが負）
     const n={x:-d.x,y:-d.y};                                // 棚の法線（上向き）
-    const t={x:-n.y,y:n.x};                                 // 法線に直交
-    const out = (side==='L')? t : {x:-t.x,y:-t.y};          // 外向き
-    const inw = {x:-out.x,y:-out.y};
+    const t={x:-n.y,y:n.x};
+    const out=(side==='L')? t : {x:-t.x,y:-t.y};            // 外向き
+    const inw={x:-out.x,y:-out.y};
 
     const P0=rootW;
     const P1=add(P0, mul(d, L_drop));
     const P2=add(P1, add(mul(out, L_knee), mul(d, D_knee)));
     const P3=add(P2, mul(d, L_vert));
-    const S0=P3;                       // 棚外端
-    const S1=add(S0, mul(inw, Ls));    // 棚内端
-    const LIP=add(S1, mul(n, H_lip));  // 返し先端
+    const S0=P3;
+    const S1=add(S0, mul(inw, Ls));
+    const LIP=add(S1, mul(n, H_lip));
 
     function vOf(p){return {x:vRoot.x - wAbs*(p.y-rootW.y), y:vRoot.y + wAbs*(p.x-rootW.x)};}
     return {
@@ -158,41 +158,35 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     };
   }
 
-  // ===== Contact solver（片側＋摩擦＋微小Baumgarte）=====
+  // ===== Contact (unilateral + friction + Baumgarte) =====
   function contactPlane(S, VS, n, tdir, Pc, Vc, rCm, pivotW, applyFrame){
-    // d>0: 上（離間） / d<0: めり込み
-    const d = dot(sub(Pc,S), n);
+    const d = ( (Pc.x-S.x)*n.x + (Pc.y-S.y)*n.y );          // +離間 / -めり込み
     const vrelN = ( (Vc.x - VS.x)*n.x + (Vc.y - VS.y)*n.y )/1000;
-    const beta = 40;                          // 位置安定化 [1/s]
-    const vBias = (d<0 ? beta*( -d/1000 ) : 0); // penetration を押し戻す
+    const beta = 40;                                        // 位置安定化 [1/s]
+    const vBias = (d<0 ? beta*( -d/1000 ) : 0);             // 押し戻し分
 
-    // 法線インパルス（押し方向のみ）
     const Icab=I_cab();
     const K = 1/m + ( ((rCm.x*n.y - rCm.y*n.x)**2) / Icab );
-    let Jn = -(vrelN - vBias) / K;            // vrelN を 0 に、+vBias で持上げ
+    let Jn = -(vrelN - vBias) / K;                          // 法線インパルス（押しのみ）
     if (Jn < 0) Jn = 0;
 
-    // CAB側更新
     const JnV={x:Jn*n.x,y:Jn*n.y};
-    cvx += (1000*JnV.x)/m; cvy += (1000*JnV.y)/m;
-    omega += ( (rCm.x*JnV.y - rCm.y*JnV.x) )/Icab;
+    cvx += (1000*JnV.x)/m; cvy += (1000*JnV.y)/m; omega += ( (rCm.x*JnV.y - rCm.y*JnV.x) )/Icab;
 
-    // フレーム側（必要なら）
     if(applyFrame){
       vFx += (-1000*JnV.x)/mF; vFy += (-1000*JnV.y)/mF;
       const rPFm={x:(pivotW.x - xF)/1000, y:(pivotW.y - yF)/1000};
       wF  += ( (rPFm.x*(-JnV.y) - rPFm.y*(-JnV.x)) )/I_frame();
     }
 
-    // 摩擦（クーロン）
+    // 摩擦
     const vrelT = ( (Vc.x - VS.x)*tdir.x + (Vc.y - VS.y)*tdir.y )/1000;
     const Kt = 1/m + ( ((rCm.x*tdir.y - rCm.y*tdir.x)**2) / Icab );
     let Jt_unc = - vrelT / Kt;
     const lim = mu * Jn;
     const Jt = Math.max(-lim, Math.min(lim, Jt_unc));
     const JtV={x:Jt*tdir.x,y:Jt*tdir.y};
-    cvx += (1000*JtV.x)/m; cvy += (1000*JtV.y)/m;
-    omega += ( (rCm.x*JtV.y - rCm.y*JtV.x) )/Icab;
+    cvx += (1000*JtV.x)/m; cvy += (1000*JtV.y)/m; omega += ( (rCm.x*JtV.y - rCm.y*JtV.x) )/Icab;
 
     if(applyFrame){
       vFx += (-1000*JtV.x)/mF; vFy += (-1000*JtV.y)/mF;
@@ -202,34 +196,30 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   }
 
   // ===== Chain constraint（剛体長・張力のみ）=====
-  // 位置レベル：L > Lc のときだけ補正（Slack なら何もしない）
-  function solveChainPosition(iter=3){
+  function solveChainPosition(iter=POS_ITERS){
     for(let k=0;k<iter;k++){
       const H={x:xt,y:0}, A=posF(anchor_local);
       const r=sub(A,H); const L=len(r); if(L<EPS) return;
-      if(L <= Lc) return; // 張ってないときは補正しない
-      const n=mul(r,1/L);
-      const C=L - Lc;
-      const rA=rot(psi,anchor_local);
-      const s = rA.x*n.y - rA.y*n.x;
+      if (L <= Lc) return;                         // たるみ時は補正しない
+      const n={x:r.x/L,y:r.y/L}; const C=L - Lc;
+      const rA=rot(psi,anchor_local); const s = rA.x*n.y - rA.y*n.x;
       const w = 1/mF, wr = 1/Math.max(1e-9, I_frame());
-      const denom = w + s*s*wr;
-      const dl = C/denom;
+      const dl = C / (w + s*s*wr);
       xF  -= w  * n.x * dl;
       yF  -= w  * n.y * dl;
       psi -= wr * s   * dl;
     }
   }
-  // 速度レベル：離れていく（vrelN>0）ときだけ張力を入れる
   function solveChainVelocity(){
     const H={x:xt,y:0}, vH={x:vt,y:0};
     const A=posF(anchor_local), vA=velAt(anchor_local);
     const r=sub(A,H); const L=len(r); if(L<EPS) return;
-    const n=mul(r,1/L);
+    const n={x:r.x/L,y:r.y/L};
     const rAm=rot(psi,anchor_local); const rAm_m={x:rAm.x/1000,y:rAm.y/1000};
-    const vrelN = ((vA.x - vH.x)*n.x + (vA.y - vH.y)*n.y)/1000;  // m/s
+    const vrelN = ((vA.x - vH.x)*n.x + (vA.y - vH.y)*n.y)/1000;
+    if (vrelN <= 0) return;                          // 近づく/同速なら張力0
     const K = 1/mF + ((rAm_m.x*n.y - rAm_m.y*n.x)**2)/I_frame();
-    let J = (vrelN>0) ? ( vrelN / K ) : 0;                        // 伸び方向のみ
+    const J =  vrelN / K;
     vFx += (-n.x*1000*J)/mF; vFy += (-n.y*1000*J)/mF;
     wF  += ( (rAm_m.x*(-J*n.y) - rAm_m.y*(-J*n.x)) )/I_frame();
   }
@@ -246,7 +236,9 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     t=0;
     // Hoist
     xt=0; vt=0;
-    // Frame：ψ=0 かつ |A-H|=Lc を満たす
+
+    // Frame：ψ=0 で |A-H|=Lc を厳密に満たす
+    // A=(xF+Ax, yF+Ay), H=(xt,0) → xF=xt-Ax, yF=-Ay-Lc
     xF = xt - anchor_local.x;
     yF = -anchor_local.y - Lc;
     vFx=0; vFy=0; psi=0; wF=0;
@@ -254,11 +246,11 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     // Arms：鉛直下、受動
     thL_rel=-Math.PI/2; wL_rel=0; thR_rel=-Math.PI/2; wR_rel=0;
 
-    // CAB：左棚高さに静置
+    // CAB：左棚外端の高さに溝を合わせて静置（phi=0）
     const rootLW = posF(rootL_local);
     const Lsum = L_drop + D_knee + L_vert;
-    const S0L  = add(rootLW, {x:0, y:-Lsum});
-    const yG   = Hmm/2 - 80;
+    const S0L  = add(rootLW, {x:0, y:-Lsum});  // 左棚外端（世界）
+    const yG   = Hmm/2 - 80;                   // 溝深さの既定値
     cx=cx0; cy=S0L.y - yG; cvx=0; cvy=0; phi=0; omega=0;
 
     paused=false; btnPause.textContent='一時停止';
@@ -267,7 +259,7 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   function step(){
     const h = dt / SUB_STEPS;
     for(let s=0;s<SUB_STEPS;s++){
-      // 1) Hoist
+      // 1) Hoist（運動学）
       let u=0; if(keyL)u-=a_cmd; if(keyR)u+=a_cmd; if(brake)u+=-3*vt;
       vt += (u - ccart*vt)*h;
       if(vt>vmax)vt=vmax; if(vt<-vmax)vt=-vmax;
@@ -277,14 +269,14 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
       vFy += (gmm/1000)*h;
 
       // 3) チェーン拘束：位置→速度（張力のみ）
-      solveChainPosition(3);
+      solveChainPosition(POS_ITERS);
       solveChainVelocity();
 
       // 4) フレーム積分
       xF += vFx*h; yF += vFy*h; psi += wF*h;
 
-      // 5) アーム根元（受動回転・外90°ストップ）
-      const Lm=(L_drop + D_knee + L_vert)/1000, Rm=(L_drop + D_knee + L_vert)/1000;
+      // 5) アーム受動回転・ストッパ
+      const Lm=(L_drop+D_knee+L_vert)/1000, Rm=Lm;
       const IarmL=Math.max(1e-6,mArm*Lm*Lm/3), IarmR=Math.max(1e-6,mArm*Rm*Rm/3);
       const thL=psi+thL_rel, thR=psi+thR_rel;
       const tauLg = - mArm*g*(Lm/2)*Math.cos(thL), tauRg = - mArm*g*(Rm/2)*Math.cos(thR);
@@ -295,13 +287,13 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
       if(thR_rel > R_st[1]){thR_rel=R_st[1]; if(wR_rel>0) wR_rel=0;}
       if(thR_rel < R_st[0]){thR_rel=R_st[0]; if(wR_rel<0) wR_rel=0;}
 
-      // 6) アーム幾何 → 受面／返し接触
+      // 6) アーム幾何 → 受面/返し接触
       const rootLW=posF(rootL_local), vRootL=velAt(rootL_local);
       const rootRW=posF(rootR_local), vRootR=velAt(rootR_local);
       const gL=armGeom('L',rootLW,vRootL,psi+thL_rel,wF+wL_rel);
       const gR=armGeom('R',rootRW,vRootR,psi+thR_rel,wF+wR_rel);
 
-      // CAB 溝の2点（左右）
+      // CAB 溝2点
       const cph=Math.cos(phi), sph=Math.sin(phi);
       const yG=Hmm/2 - 80, xL_loc=-Wmm/2 + 60, xR_loc=Wmm/2 - 60;
       const pCL={x:cx + cph*xL_loc - sph*yG, y:cy + sph*xL_loc + cph*yG};
@@ -310,7 +302,7 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
       const vCR={x:cvx - omega*(sph*xR_loc + cph*yG), y:cvy + omega*(cph*xR_loc - sph*yG)};
       const rCLm={x:(pCL.x-cx)/1000, y:(pCL.y-cy)/1000}, rCRm={x:(pCR.x-cx)/1000, y:(pCR.y-cy)/1000};
 
-      // 棚面（上向き法線）＋返し（外向き法線）—> CABを確実に持上げ
+      // 棚（上向き）＋返し（外向き）
       contactPlane(gL.shelfOrigin,gL.vShelf,gL.shelfN,gL.shelfT,pCL,vCL,rCLm,rootLW,true);
       contactPlane(gR.shelfOrigin,gR.vShelf,gR.shelfN,gR.shelfT,pCR,vCR,rCRm,rootRW,true);
       const tL={x:-gL.shelfN.y,y:gL.shelfN.x}, tR={x:-gR.shelfN.y,y:gR.shelfN.x};
@@ -345,15 +337,15 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     ctx.fillStyle='#ff7070'; ctx.fillRect(-frameSpan*s/2, -frameH*s/2, frameSpan*s, frameH*s);
     ctx.restore();
 
-    // arms
+    // arms（幾何で描画）
     function drawArm(poly){
       ctx.strokeStyle='#ff5a5a'; ctx.lineWidth=6; ctx.beginPath();
       ctx.moveTo(sx(poly[0].x),sy(poly[0].y));
       for(let i=1;i<poly.length;i++) ctx.lineTo(sx(poly[i].x),sy(poly[i].y));
       ctx.stroke();
-      ctx.strokeStyle='#ff9a9a'; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(sx(poly[4].x),sy(poly[4].y)); ctx.lineTo(sx(poly[5].x),sy(poly[5].y)); ctx.stroke();
+      ctx.strokeStyle='#ff9a9a'; ctx.lineWidth=8;
+      ctx.beginPath(); ctx.moveTo(sx(poly[4].x),sy(poly[4].y)); ctx.lineTo(sx(poly[5].x),sy(poly[5].y)); ctx.stroke();
     }
-    // 再計算（描画用）
     const rootLW=posF(rootL_local), rootRW=posF(rootR_local);
     const gL=armGeom('L',rootLW,velAt(rootL_local),psi+thL_rel,wF+wL_rel);
     const gR=armGeom('R',rootRW,velAt(rootR_local),psi+thR_rel,wF+wR_rel);
