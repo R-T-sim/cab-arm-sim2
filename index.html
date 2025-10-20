@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>CAB 2D v4（剛体チェーン/慣性遅れ修正）</title>
+<title>CAB 2D v4（剛体チェーン/慣性遅れ修正+初期姿勢/描画修正）</title>
 <style>
 :root{--bg:#0b1020;--fg:#e8eef9;--muted:#9fb3d9;--card:#121a33;--good:#26d07c;--arm:#ff5a5a;--cab:#7fb6ff}
 html,body{height:100%}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
@@ -106,66 +106,67 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 
   // ===== State =====
   let t=0, dt=1/600;
+
+  // サブステップと拘束反復（★追加）
+  const SUB_STEPS = 8;     // 1/600 s を 8 分割
+  const POS_ITERS  = 6;    // チェーン位置拘束の反復回数
+  const EPS = 1e-9;
+
   // hoist
   let xt=0, vt=0;
   // frame (rigid)
   let xF=0, yF=-100, vFx=0, vFy=0, psi=0, wF=0;
-  // arms (相対角は簡略、自由回転＆外90°ストップは省略可：拘束の本質に影響なし)
   // cab
   let cx=cx0, cy=-1800, cvx=0, cvy=0, phi=0, omega=0;
 
   // ===== Math utils =====
   const gmm=-9810, g=9.81;
-  const eps=1e-9;
   function rot(a,v){const c=Math.cos(a),s=Math.sin(a);return {x:c*v.x - s*v.y, y:s*v.x + c*v.y};}
   function add(a,b){return {x:a.x+b.x,y:a.y+b.y};}
   function sub(a,b){return {x:a.x-b.x,y:a.y-b.y};}
   function mul(v,k){return {x:v.x*k,y:v.y*k};}
   function len(v){return Math.hypot(v.x,v.y);}
-  function norm(v){const L=len(v)||1;return {x:v.x/L,y:v.y/L};}
-  function cross(a,b){return a.x*b.y - a.y*b.x;}
   function posF(local){return add({x:xF,y:yF}, rot(psi, local));}
   function velAt(local){const r=rot(psi,local); return {x:vFx - wF*r.y, y:vFy + wF*r.x};}
   function I_frame(){const W=frameSpan/1000,H=frameH/1000; return mF*(W*W+H*H)/12;}
   function I_cab(){const W=Wmm/1000,H=Hmm/1000; return m*(W*W+H*H)/12;}
 
   // ===== Chain constraint (rigid length) =====
-  // 位置レベル：|A-H| = Lc を厳密化（1stepあたり数回反復）  ※フレームのみ修正、ホイストは運動学的
-  function solveChainPosition(iter=3){
+  // 位置レベル：|A-H| = Lc を厳密化（フレームのみ補正）
+  function solveChainPosition(iter = POS_ITERS){
     for(let k=0;k<iter;k++){
       const H={x:xt,y:0}, A=posF(anchor_local);
-      let r=sub(A,H); let L=len(r); if(L<eps) return;
-      const n=mul(r,1/L); const C=L - Lc;           // 伸び(+)だけでなく常にゼロ化＝剛体長
-      if(Math.abs(C)<1e-6) return;
-      const rA=rot(psi,anchor_local);               // COM→アンカー
-      const s = cross(rA, n);                       // 回転寄与
-      const w = 1/mF, wrot = 1/Math.max(1e-9,I_frame());
-      const denom = w + s*s*wrot;
-      const dl = C/denom;                           // 位置レベルのラグランジュ増分
-      // フレームの並進・回転を同時に補正（mm, rad）
-      xF -= w    * n.x * dl;  yF -= w    * n.y * dl;
-      psi-= wrot * s   * dl;
+      const r=sub(A,H); const L=len(r); if(L<EPS) return;
+      const n=mul(r,1/L);              // H→A
+      const C=L - Lc;                  // 長さ誤差
+      if (Math.abs(C) < 1e-9) return;
+      const rA=rot(psi,anchor_local);  // COM→アンカー
+      const s = rA.x*n.y - rA.y*n.x;   // 回転寄与
+      const w = 1/mF, wr = 1/Math.max(1e-9, I_frame());
+      const denom = w + s*s*wr;
+      const dl = C/denom;
+      // フレーム並進・回転を同時に補正（ホイストは運動学）
+      xF  -= w  * n.x * dl;
+      yF  -= w  * n.y * dl;
+      psi -= wr * s   * dl;
     }
   }
 
-  // 速度レベル：チェーン方向の相対速度をゼロ化（張力のみ）
+  // 速度レベル：チェーン方向の相対速度 = 0（張力のみ）
   function solveChainVelocity(){
     const H={x:xt,y:0}, vH={x:vt,y:0};
     const A=posF(anchor_local), vA=velAt(anchor_local);
-    const r=sub(A,H); const L=len(r); if(L<eps) return;
+    const r=sub(A,H); const L=len(r); if(L<EPS) return;
     const n=mul(r,1/L);
-    const vrel = ((vA.x - vH.x)*n.x + (vA.y - vH.y)*n.y)/1000; // m/s
-    // 効質量（並進＋回転）
     const rAm=rot(psi,anchor_local); const rAm_m={x:rAm.x/1000,y:rAm.y/1000};
-    const K = 1/mF + ( (rAm_m.x*n.y - rAm_m.y*n.x)**2 )/I_frame();
-    let J = - vrel / K;                 // N·s（張力）
-    if(J<0) J=0;                        // 張力のみ
-    // フレームの速度を更新（ホイストは運動学的で変化なし）
+    const vrel = ((vA.x - vH.x)*n.x + (vA.y - vH.y)*n.y)/1000;           // m/s
+    const K = 1/mF + ((rAm_m.x*n.y - rAm_m.y*n.x)**2)/I_frame();         // 有効質量
+    let J = - vrel / K; if (J<0) J=0;                                    // N·s（張力のみ）
     vFx += (-n.x*1000*J)/mF; vFy += (-n.y*1000*J)/mF;
     wF  += ( (rAm_m.x*(-J*n.y) - rAm_m.y*(-J*n.x)) )/I_frame();
   }
 
-  // ===== Step =====
+  // ===== Step / Reset =====
   const btnReset=document.getElementById('reset'), btnPause=document.getElementById('pause'); let paused=false;
   btnReset.onclick=()=>reset();
   btnPause.onclick=()=>{paused=!paused;btnPause.textContent=paused?'再開':'一時停止';};
@@ -173,66 +174,89 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   addEventListener('keydown',e=>{if(e.code==='ArrowLeft')keyL=true;if(e.code==='ArrowRight')keyR=true;if(e.code==='Space')brake=true;if(e.key==='r'||e.key==='R')reset();if(e.key==='p'||e.key==='P'){paused=!paused;btnPause.textContent=paused?'再開':'一時停止';}});
   addEventListener('keyup',e=>{if(e.code==='ArrowLeft')keyL=false;if(e.code==='ArrowRight')keyR=false;if(e.code==='Space')brake=false;});
 
+  // ★初期姿勢を図通りにセット（水平フレーム・チェーン垂直・アーム下向き・CAB静置）
   function reset(){
-    t=0; xt=0; vt=0; xF=0; yF=-100; vFx=0; vFy=0; psi=0; wF=0;
-    cx=cx0; cy=-1800; cvx=0; cvy=0; phi=0; omega=0;
-    // 初回から張り長一致
-    solveChainPosition(6);
+    t=0;
+    // Hoist
+    xt=0; vt=0;
+    // Frame：ψ=0 で |A-H|=Lc を厳密に満たす xF,yF
+    // A=(xF+Ax, yF+Ay), H=(xt,0) → xF=xt-Ax, yF=-Ay-Lc
+    xF = xt - anchor_local.x;
+    yF = -anchor_local.y - Lc;
+    vFx=0; vFy=0; psi=0; wF=0;
+
+    // CAB：左棚外端の高さに溝を合わせる（phi=0）
+    // rootL_world = (xF,yF)+rootL_local
+    const rootLW = add({x:xF,y:yF}, rootL_local);
+    const dDown = {x:0, y:-1}; // ψ=0 なのでそのまま下向き
+    const Lsum  = L_drop + D_knee + L_vert;
+    const shelfOuterL = add(rootLW, mul(dDown, Lsum));
+    const yG = Hmm/2 - 80; // 溝深さの既定値に合わせる（必要に応じて値を同期）
+    phi=0; omega=0; cvx=0; cvy=0; cx=cx0; cy = shelfOuterL.y - yG;
+
     paused=false; btnPause.textContent='一時停止';
   }
 
   function step(){
-    // 1) Hoist（入力）—運動学的
-    let u=0; if(keyL)u-=a_cmd; if(keyR)u+=a_cmd; if(brake)u+=-3*vt;
-    vt += (u - ccart*vt)*dt; if(vt>vmax)vt=vmax; if(vt<-vmax)vt=-vmax; xt += vt*dt;
+    const h = dt / SUB_STEPS;
+    for(let s=0;s<SUB_STEPS;s++){
+      // 1) Hoist（運動学）
+      let u=0; if(keyL)u-=a_cmd; if(keyR)u+=a_cmd; if(brake)u+=-3*vt;
+      vt += (u - ccart*vt)*h;
+      if(vt>vmax)vt=vmax; if(vt<-vmax)vt=-vmax;
+      xt += vt*h;
 
-    // 2) 重力（フレーム粘性は完全無視）
-    vFy += (gmm/1000)*dt;
+      // 2) 重力（フレーム粘性は無視）
+      vFy += (gmm/1000)*h;
 
-    // 3) チェーン拘束：まず位置で剛体長を満たす
-    solveChainPosition(3);
+      // 3) チェーン拘束：位置 → 速度
+      solveChainPosition(POS_ITERS);
+      solveChainVelocity();
 
-    // 4) 速度レベルでもチェーン方向相対速度をゼロ化（慣性遅れを保ちつつ伸びを抑止）
-    solveChainVelocity();
+      // 4) フレーム積分
+      xF += vFx*h; yF += vFy*h; psi += wF*h;
 
-    // 5) フレーム積分
-    xF += vFx*dt; yF += vFy*dt; psi += wF*dt;
+      // 5) CAB 重力
+      cvy += gmm*h/1000;
 
-    // 6) 接触（棚＋返し）：最小構成（左棚のみでもOK）。必要に応じて右側も追加可能。
-    // ここでは簡略（棚は水平、返しは外向き垂直）※本質は慣性遅れ＆チェーン剛性なので省略可
-    const shelfY = yF -  (D_knee + L_drop + L_vert); // 左棚の高さ近似
-    const shelfX0 = xF - 600, shelfX1 = xF + 600;     // 幅近似
-    // CAB上面中心の世界座標
-    const cph=Math.cos(phi), sph=Math.sin(phi);
-    const yG = Hmm/2 - 80; // 溝深さ近似
-    const xL_loc=-Wmm/2 + 60, xR_loc=Wmm/2 - 60;
-    const pCL={x:cx + cph*xL_loc - sph*yG, y:cy + sph*xL_loc + cph*yG};
-    const pCR={x:cx + cph*xR_loc - sph*yG, y:cy + sph*xR_loc + cph*yG};
-    // 棚面（上向き法線）
-    const n={x:0,y:1}, tdir={x:1,y:0};
-    function contact(P){
-      if(P.x<shelfX0 || P.x>shelfX1) return;
-      const pen = (shelfY - P.y); // Pが棚より下→負、上→正
-      const vP={x:cvx - omega*(P.y-cy), y:cvy + omega*(P.x-cx)};
-      if(pen>0 && vP.y<0){ // めり込み & 近づき
-        // 法線
-        const Icab=I_cab();
-        const r={x:(P.x-cx)/1000, y:(P.y-cy)/1000};
-        const K = 1/m + ((r.x*n.y - r.y*n.x)**2)/Icab;
-        const vrelN = (vP.x*n.x + vP.y*n.y)/1000;
-        const Jn = Math.max(0, -vrelN/K);
-        cvx += (1000*Jn*n.x)/m; cvy += (1000*Jn*n.y)/m; omega += ( (r.x*Jn*n.y - r.y*Jn*n.x) )/Icab;
-        // 摩擦
-        const vrelT = (vP.x*tdir.x + vP.y*tdir.y)/1000;
-        const Kt=1/m + ((r.x*tdir.y - r.y*tdir.x)**2)/Icab;
-        const Jt_unc = - vrelT/Kt; const Jt = Math.max(-mu*Jn, Math.min(mu*Jn, Jt_unc));
-        cvx += (1000*Jt*tdir.x)/m; cvy += (1000*Jt*tdir.y)/m; omega += ( (r.x*Jt*tdir.y - r.y*Jt*tdir.x))/Icab;
+      // 6) （簡略）棚面接触：棚外端の世界座標を再計算し、水平棚として扱う
+      const rootLW = add({x:xF,y:yF}, rot(psi, rootL_local));
+      const dDown = rot(psi, {x:0,y:-1});
+      const Lsum  = L_drop + D_knee + L_vert;
+      const S0L   = add(rootLW, mul(dDown, Lsum)); // 左棚外端（世界）
+      const shelfY = S0L.y;                        // 水平棚と近似
+      const shelfX0 = xF - 600, shelfX1 = xF + 600;
+
+      const cph=Math.cos(phi), sph=Math.sin(phi);
+      const yG = Hmm/2 - 80; // 溝深さ既定
+      const xL_loc=-Wmm/2 + 60, xR_loc=Wmm/2 - 60;
+      const pCL={x:cx + cph*xL_loc - sph*yG, y:cy + sph*xL_loc + cph*yG};
+      const pCR={x:cx + cph*xR_loc - sph*yG, y:cy + sph*xR_loc + cph*yG};
+
+      const n={x:0,y:1}, tdir={x:1,y:0};
+      function contact(P){
+        if(P.x<shelfX0 || P.x>shelfX1) return;
+        const pen = (shelfY - P.y);
+        const vP={x:cvx - omega*(P.y-cy), y:cvy + omega*(P.x-cx)};
+        if(pen>0 && vP.y<0){
+          const Icab=I_cab();
+          const r={x:(P.x-cx)/1000, y:(P.y-cy)/1000};
+          const K = 1/m + ((r.x*n.y - r.y*n.x)**2)/Icab;
+          const vrelN = (vP.x*n.x + vP.y*n.y)/1000;
+          const Jn = Math.max(0, -vrelN/K);
+          cvx += (1000*Jn*n.x)/m; cvy += (1000*Jn*n.y)/m; omega += ( (r.x*Jn*n.y - r.y*Jn*n.x) )/Icab;
+          const vrelT = (vP.x*tdir.x + vP.y*tdir.y)/1000;
+          const Kt=1/m + ((r.x*tdir.y - r.y*tdir.x)**2)/Icab;
+          const Jt_unc = - vrelT/Kt; const Jt = Math.max(-mu*Jn, Math.min(mu*Jn, Jt_unc));
+          cvx += (1000*Jt*tdir.x)/m; cvy += (1000*Jt*tdir.y)/m; omega += ( (r.x*Jt*tdir.y - r.y*Jt*tdir.x))/Icab;
+        }
       }
-    }
-    contact(pCL); contact(pCR);
+      contact(pCL); contact(pCR);
 
-    // 7) CAB自由落下
-    cvy += gmm*dt/1000; cx += cvx*dt; cy += cvy*dt; const Icab=I_cab(); omega += (-cdphi*omega/Icab)*dt; phi += omega*dt;
+      // 7) CAB 積分
+      cx += cvx*h; cy += cvy*h;
+      const Icab=I_cab(); omega += (-cdphi*omega/Icab)*h; phi += omega*h;
+    }
   }
 
   // ===== Draw =====
@@ -249,19 +273,26 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     const anchor=posF(anchor_local); ctx.strokeStyle='#7bd6a8'; ctx.beginPath(); ctx.moveTo(sx(xt),sy(0)); ctx.lineTo(sx(anchor.x), sy(anchor.y)); ctx.stroke();
     // frame beam
     ctx.save(); ctx.translate(sx(xF), sy(yF)); ctx.rotate(-psi); ctx.fillStyle='#ff7070'; ctx.fillRect(-frameSpan*s/2, -frameH*s/2, frameSpan*s, frameH*s); ctx.restore();
-    // very simple arm (概形)
+
+    // アーム（★下向きで描画に修正）
     ctx.strokeStyle='#ff5a5a'; ctx.lineWidth=6;
-    function drawArm(rootX){
-      const base={x:rootX,y:yF}, d=rot(psi,{x:1,y:0}), n={x:-d.y,y:d.x};
-      const P0=add({x:rootX,y:yF}, mul(d, 0)); const P1=add(P0, mul(n, 0)); // ルート
-      const P2=add(P1, mul(d, L_drop)); const P3=add(P2, add(mul(n, (rootX<xF)?L_knee:-L_knee), mul(d, D_knee)));
-      const P4=add(P3, mul(d, L_vert)); const P5=add(P4, mul({x:-n.x,y:-n.y}, Ls)); const P6=add(P5, mul({x:d.x,y:d.y}, -H_lip));
+    function drawArm(rootX, side){
+      const rootW = add({x:xF,y:yF}, rot(psi,{x:rootX - xF, y:rootL_local.y}));
+      const down = rot(psi,{x:0,y:-1});            // 下向き
+      const fwd  = rot(psi,{x:1,y:0});             // フレーム+X
+      const out  = (side==='L') ? mul(fwd,-1) : fwd;   // 外向き
+      const inw  = mul(out,-1);                    // 内向き（棚方向）
+      const P1 = rootW;
+      const P2 = add(P1, mul(down, L_drop));
+      const P3 = add(P2, add(mul(out, L_knee), mul(down, D_knee)));
+      const P4 = add(P3, mul(down, L_vert));
+      const P5 = add(P4, mul(inw, Ls));
+      const P6 = add(P5, mul(mul(down,-1), H_lip)); // 返し（上向き）
       ctx.beginPath(); ctx.moveTo(sx(P1.x),sy(P1.y)); [P2,P3,P4,P5,P6].forEach(p=>{ctx.lineTo(sx(p.x),sy(p.y));}); ctx.stroke();
-      // shelf highlight
       ctx.strokeStyle='#ff9a9a'; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(sx(P4.x),sy(P4.y)); ctx.lineTo(sx(P5.x),sy(P5.y)); ctx.stroke();
       ctx.strokeStyle='#ff5a5a'; ctx.lineWidth=6;
     }
-    drawArm(xF-700); drawArm(xF+700);
+    drawArm(xF+rootL_local.x,'L'); drawArm(xF+rootR_local.x,'R');
 
     // CAB
     ctx.save(); ctx.translate(sx(cx), sy(cy)); ctx.rotate(-phi);
