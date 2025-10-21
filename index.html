@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>CAB 2D v5.1（張力のみの剛体チェーン / 受面で持上げ / 慣性遅れ / アーム自由）</title>
+<title>CAB 2D v5.2（DXF初期配置対応：張力のみ剛体チェーン／受面で持上げ／慣性遅れ／アーム自由）</title>
 <style>
 :root{--bg:#0b1020;--fg:#e8eef9;--muted:#9fb3d9;--card:#121a33;--good:#26d07c;--arm:#ff5a5a;--cab:#7fb6ff}
 html,body{height:100%}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
@@ -25,7 +25,7 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
       <h1>ホイスト（緑：操作）＋ 吊具フレーム＆アーム（赤）＋ CAB（青）</h1>
       <div class="legend">
         原点=フック(0,0)、X右＋/Y上＋、単位=mm。重力は下向き 9.8 m/s²。台車は |v| ≤ 0.3 m/s。<br>
-        v5.1：<b>チェーンは剛体長（張力のみ）</b>、<b>受面＝一方向接触＋摩擦＋微小位置安定化</b>、<b>アーム根元は開き方向フリー</b>。
+        v5.2：<b>DXFの初期配置に合わせて幾何・原点を自動一致</b>。チェーンは剛体長（張力のみ）、受面は片側接触＋摩擦＋微小位置安定化、アーム根元は開き方向フリー。
       </div>
     </div>
 
@@ -41,13 +41,13 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 
     <h2>フレーム/チェーン</h2>
     <div class="row"><label>フレーム質量 m<sub>F</sub> [kg]</label><input id="mf" type="range" min="10" max="800" step="10" value="150"><span id="mfv">150</span></div>
-    <div class="row"><label>チェーン長 L<sub>c</sub> [mm]</label><input id="Lc" type="range" min="50" max="2000" step="1" value="150"><span id="Lcv">150</span></div>
+    <div class="row"><label>チェーン長 L<sub>c</sub> [mm]</label><input id="Lc" type="range" min="50" max="2000" step="1" value="500"><span id="Lcv">500</span></div>
 
     <h2>アーム（落とし→ひざ→縦棒→棚＋返し）</h2>
-    <div class="row"><label>落とし L<sub>drop</sub> [mm]</label><input id="ldrop" type="range" min="40" max="800" step="5" value="220"><span id="ldropv">220</span></div>
-    <div class="row"><label>ひざ 外 L<sub>knee</sub> [mm]</label><input id="lknee" type="range" min="40" max="600" step="5" value="140"><span id="lkneev">140</span></div>
-    <div class="row"><label>ひざ 下 D<sub>knee</sub> [mm]</label><input id="dknee" type="range" min="40" max="600" step="5" value="160"><span id="dkneev">160</span></div>
-    <div class="row"><label>縦棒 L<sub>vert</sub> [mm]</label><input id="lvert" type="range" min="200" max="3000" step="10" value="1200"><span id="lvertv">1200</span></div>
+    <div class="row"><label>落とし L<sub>drop</sub> [mm]</label><input id="ldrop" type="range" min="40" max="800" step="1" value="180"><span id="ldropv">180</span></div>
+    <div class="row"><label>ひざ 外 L<sub>knee</sub> [mm]</label><input id="lknee" type="range" min="10" max="400" step="1" value="56"><span id="lkneev">56</span></div>
+    <div class="row"><label>ひざ 下 D<sub>knee</sub> [mm]</label><input id="dknee" type="range" min="10" max="400" step="1" value="139"><span id="dkneev">139</span></div>
+    <div class="row"><label>縦棒 L<sub>vert</sub> [mm]</label><input id="lvert" type="range" min="100" max="3000" step="1" value="221"><span id="lvertv">221</span></div>
     <div class="row"><label>棚長 L<sub>s</sub> [mm]</label><input id="slen" type="range" min="40" max="800" step="5" value="160"><span id="slenv">160</span></div>
     <div class="row"><label>返し高さ H<sub>lip</sub> [mm]</label><input id="hlip" type="range" min="10" max="200" step="2" value="80"><span id="hlipv">80</span></div>
 
@@ -80,12 +80,18 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
   // ===== Bind UI =====
   function bind(id, lab, setter, fmt){const s=document.getElementById(id),l=document.getElementById(lab);const apply=()=>{const v=parseFloat(s.value);setter(v);l.textContent=fmt?fmt(v):String(v)};s.addEventListener('input',apply);apply();}
   let a_cmd=3000, vmax=300, ccart=0.26;
-  let mF=150, Lc=150;
+  let mF=150, Lc=500;                 // DXF: chain 500
   let frameSpan=2400, frameH=120;
-  let anchor_local={x:0, y:80};                  // フレーム座標でアンカー位置
+  // DXF: フレーム基準（ψ=0）に対して root y=-100, x=±700, アンカーは +100 上
+  let anchor_local={x:0, y:100};
   let rootL_local={x:-700, y:-100}, rootR_local={x:700, y:-100};
-  let L_drop=220, L_knee=140, D_knee=160, L_vert=1200, Ls=160, H_lip=80;
+  // DXF: arm lengths
+  let L_drop=180, L_knee=56, D_knee=139, L_vert=221, Ls=160, H_lip=80;
+  // CAB & friction
   let m=400, Wmm=1800, Hmm=1200, mu=0.30, cdphi=10, cx0=7;
+  // CAB 溝オフセット（ワールド→CAB中心まで）：DXFから 560 を自動設定
+  let yGroove = 560;  // reset() でも再計算される
+
   bind('acmd','acmdv',v=>a_cmd=v,v=>v.toFixed(0));
   bind('vmax','vmaxv',v=>vmax=v,v=>v.toFixed(0));
   bind('cd','cdv',v=>ccart=v,v=>v.toFixed(2));
@@ -106,15 +112,15 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 
   // ===== State =====
   let t=0, dt=1/600;
-  const SUB_STEPS = 8;   // サブステップ
-  const POS_ITERS  = 6;  // チェーン位置拘束反復
+  const SUB_STEPS = 8;
+  const POS_ITERS  = 6;
   const EPS = 1e-9;
 
   // hoist
   let xt=0, vt=0;
   // frame
-  let xF=0, yF=-100, vFx=0, vFy=0, psi=0, wF=0;
-  // arms（開き方向フリー：左[-180,-90]°、右[-90,0]°）
+  let xF=0, yF=-600, vFx=0, vFy=0, psi=0, wF=0; // DXFに整合
+  // arms（開き方向フリー）
   let thL_rel=-Math.PI/2, wL_rel=0, thR_rel=-Math.PI/2, wR_rel=0;
   const L_st=[-Math.PI,-Math.PI/2], R_st=[-Math.PI/2,0];
   const mArm=30, cArm=10;
@@ -136,10 +142,10 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 
   // ===== Arm geometry =====
   function armGeom(side, rootW, vRoot, thAbs, wAbs){
-    const d={x:Math.cos(thAbs),y:Math.sin(thAbs)};          // アーム軸（下向きが負）
-    const n={x:-d.x,y:-d.y};                                // 棚の法線（上向き）
+    const d={x:Math.cos(thAbs),y:Math.sin(thAbs)};      // 下向き
+    const n={x:-d.x,y:-d.y};                            // 上向き
     const t={x:-n.y,y:n.x};
-    const out=(side==='L')? t : {x:-t.x,y:-t.y};            // 外向き
+    const out=(side==='L')? t : {x:-t.x,y:-t.y};        // 外向き
     const inw={x:-out.x,y:-out.y};
 
     const P0=rootW;
@@ -200,7 +206,7 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     for(let k=0;k<iter;k++){
       const H={x:xt,y:0}, A=posF(anchor_local);
       const r=sub(A,H); const L=len(r); if(L<EPS) return;
-      if (L <= Lc) return;                         // たるみ時は補正しない
+      if (L <= Lc) return; // たるみ時は補正しない
       const n={x:r.x/L,y:r.y/L}; const C=L - Lc;
       const rA=rot(psi,anchor_local); const s = rA.x*n.y - rA.y*n.x;
       const w = 1/mF, wr = 1/Math.max(1e-9, I_frame());
@@ -234,11 +240,11 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 
   function reset(){
     t=0;
+
     // Hoist
     xt=0; vt=0;
 
-    // Frame：ψ=0 で |A-H|=Lc を厳密に満たす
-    // A=(xF+Ax, yF+Ay), H=(xt,0) → xF=xt-Ax, yF=-Ay-Lc
+    // Frame：ψ=0 かつ |A-H|=Lc を厳密に満たす（DXF：アンカー(0,-500) & anchor_local.y=+100 → yF=-600）
     xF = xt - anchor_local.x;
     yF = -anchor_local.y - Lc;
     vFx=0; vFy=0; psi=0; wF=0;
@@ -246,12 +252,14 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
     // Arms：鉛直下、受動
     thL_rel=-Math.PI/2; wL_rel=0; thR_rel=-Math.PI/2; wR_rel=0;
 
-    // CAB：左棚外端の高さに溝を合わせて静置（phi=0）
-    const rootLW = posF(rootL_local);
-    const Lsum = L_drop + D_knee + L_vert;
-    const S0L  = add(rootLW, {x:0, y:-Lsum});  // 左棚外端（世界）
-    const yG   = Hmm/2 - 80;                   // 溝深さの既定値
-    cx=cx0; cy=S0L.y - yG; cvx=0; cvy=0; phi=0; omega=0;
+    // CAB：DXFの重心cyを採用し、溝オフセットを棚高さから逆算（pCL.y = 棚外端 y）
+    const rootLW = posF(rootL_local);                     // (-700,-700) になる
+    const Lsum = L_drop + D_knee + L_vert;                // 180+139+221 = 540
+    const S0L  = add(rootLW, {x:0, y:-Lsum});             // (-700,-1240)
+    const CY0_DXF = -1800;                                // DXFの重心
+    cx=cx0; cy=CY0_DXF; cvx=0; cvy=0; phi=0; omega=0;
+    yGroove = S0L.y - cy;                                 // = 560（DXFに一致）
+    if(!Number.isFinite(yGroove)) yGroove = Hmm/2 - 80;   // フォールバック
 
     paused=false; btnPause.textContent='一時停止';
   }
@@ -293,9 +301,9 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
       const gL=armGeom('L',rootLW,vRootL,psi+thL_rel,wF+wL_rel);
       const gR=armGeom('R',rootRW,vRootR,psi+thR_rel,wF+wR_rel);
 
-      // CAB 溝2点
+      // CAB 溝2点（左右）— DXF一致の yGroove を使用
       const cph=Math.cos(phi), sph=Math.sin(phi);
-      const yG=Hmm/2 - 80, xL_loc=-Wmm/2 + 60, xR_loc=Wmm/2 - 60;
+      const yG=yGroove, xL_loc=-Wmm/2 + 60, xR_loc=Wmm/2 - 60;
       const pCL={x:cx + cph*xL_loc - sph*yG, y:cy + sph*xL_loc + cph*yG};
       const pCR={x:cx + cph*xR_loc - sph*yG, y:cy + sph*xR_loc + cph*yG};
       const vCL={x:cvx - omega*(sph*xL_loc + cph*yG), y:cvy + omega*(cph*xL_loc - sph*yG)};
@@ -358,9 +366,9 @@ input[type=range]{width:100%}.btn{background:linear-gradient(180deg,#3a76ff,#2b5
 
     readout.textContent =
       `t=${t.toFixed(2)} s  Hoist x=${xt.toFixed(1)} mm v=${vt.toFixed(1)} mm/s (≤${vmax.toFixed(0)})\n`+
-      `Frame c=(${xF.toFixed(1)}, ${yF.toFixed(1)}) ψ=${(psi*180/Math.PI).toFixed(2)}°\n`+
+      `Frame c=(${xF.toFixed(1)}, ${yF.toFixed(1)}) ψ=${(psi*180/Math.PI).toFixed(2)}°  Lc=${Lc.toFixed(0)}\n`+
       `ArmL θrel=${(thL_rel*180/Math.PI).toFixed(1)}°  ArmR θrel=${(thR_rel*180/Math.PI).toFixed(1)}°\n`+
-      `CAB c=(${cx.toFixed(1)}, ${cy.toFixed(1)}) φ=${(phi*180/Math.PI).toFixed(2)}° μ=${mu.toFixed(2)}`;
+      `CAB c=(${cx.toFixed(1)}, ${cy.toFixed(1)}) φ=${(phi*180/Math.PI).toFixed(2)}°  yGroove=${yGroove.toFixed(1)} mm  μ=${mu.toFixed(2)}`;
   }
 
   // loop
